@@ -58,6 +58,20 @@ jobs:
           set -euo pipefail
           bash scripts/tests/run-auth-tests.sh 2>&1 | tee build/logs/auth-tests.log
 
+      - name: Resolve Package Dependencies
+        run: |
+          set -euo pipefail
+          if xcodebuild -resolvePackageDependencies -project AltStore.xcodeproj -scheme SideStore 2>&1 | tee build/logs/resolve.log; then
+            exit 0
+          else
+            RESOLVE_STATUS=$?
+          fi
+          if ! grep -Eq "failed downloading .*required by binary target 'OpenSSL': .*/Library/Caches/org\.swift\.swiftpm/artifacts/[^[:space:]]+ already exists in file system" build/logs/resolve.log; then
+            exit "$RESOLVE_STATUS"
+          fi
+          echo "Retrying package resolution once after a SwiftPM artifact cache collision."
+          xcodebuild -resolvePackageDependencies -project AltStore.xcodeproj -scheme SideStore 2>&1 | tee build/logs/resolve-retry.log
+
       - name: Archive
         run: |
           set -euo pipefail

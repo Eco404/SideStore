@@ -13,6 +13,10 @@ public class DeveloperPortalProxy {
     public static let shared: DeveloperPortalProxy = DeveloperPortalProxyWithAuth()
     
     fileprivate init() {}
+
+    fileprivate var portal: DeveloperPortal {
+        DeveloperPortal(authenticationMode: UserDefaults.standard.appleAuthenticationMode)
+    }
     
     private func getSession() async throws -> ALTAppleAPISession {
         try await AuthManager.shared.getAuthenticatedSession()
@@ -25,67 +29,67 @@ public class DeveloperPortalProxy {
     
     public func fetchTeams(for account: ALTAccount) async throws -> [ALTTeam] {
         let session = try await self.getSession()
-        return try await ALTAppleAPI.shared.fetchTeams(for: account, session: session)
+        return try await portal.fetchTeams(for: account, session: session)
     }
     
     public func fetchCertificates(team: ALTTeam? = nil) async throws -> [ALTX509Certificate] {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.fetchCertificates(for: team, session: session)
+        return try await portal.fetchCertificates(for: team, session: session)
     }
     
     @discardableResult
     public func createCertificate(machineName: String, team: ALTTeam? = nil) async throws -> ALTCertificate {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.addCertificate(machineName: machineName, to: team, session: session)
+        return try await portal.addCertificate(machineName: machineName, to: team, session: session)
     }
     
     @discardableResult
     public func revokeCertificate(_ certificate: ALTX509Certificate, team: ALTTeam? = nil) async throws -> Bool {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.revokeCertificate(certificate, for: team, session: session)
+        return try await portal.revokeCertificate(certificate, for: team, session: session)
     }
     
     public func fetchDevices(for team: ALTTeam? = nil, types: ALTDeviceType = .all) async throws -> [ALTDevice] {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.fetchDevices(for: team, types: types, session: session)
+        return try await portal.fetchDevices(for: team, types: types, session: session)
     }
     
     @discardableResult
     public func registerDevice(name: String, identifier: String, type: ALTDeviceType = .iphone, team: ALTTeam? = nil) async throws -> ALTDevice {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.registerDevice(name: name, identifier: identifier, type: type, team: team, session: session)
+        return try await portal.registerDevice(name: name, identifier: identifier, type: type, team: team, session: session)
     }
 
     @discardableResult
     public func updateDevice(_ device: ALTDevice, team: ALTTeam? = nil) async throws -> ALTDevice {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.updateDevice(device, team: team, session: session)
+        return try await portal.updateDevice(device, team: team, session: session)
     }
 
     @discardableResult
     public func disableDevice(_ device: ALTDevice, team: ALTTeam? = nil) async throws -> ALTDevice {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.disableDevice(device, team: team, session: session)
+        return try await portal.disableDevice(device, team: team, session: session)
     }
 
     @discardableResult
     public func deleteDevice(_ device: ALTDevice, team: ALTTeam? = nil) async throws -> Bool {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.deleteDevice(device, team: team, session: session)
+        return try await portal.deleteDevice(device, team: team, session: session)
     }
 
     public func fetchAppIDs(team: ALTTeam? = nil) async throws -> [ALTAppID] {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.fetchAppIDs(for: team, session: session)
+        return try await portal.fetchAppIDs(for: team, session: session)
     }
 
     public func fetchAppIDs(for team: ALTTeam) async throws -> [ALTAppID] {
@@ -96,21 +100,21 @@ public class DeveloperPortalProxy {
     public func addAppID(name: String, bundleIdentifier: String, team: ALTTeam? = nil) async throws -> ALTAppID {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.addAppID(withName: name, bundleIdentifier: bundleIdentifier, team: team, session: session)
+        return try await portal.addAppID(withName: name, bundleIdentifier: bundleIdentifier, team: team, session: session)
     }
 
     @discardableResult
     public func updateAppID(_ appID: ALTAppID, team: ALTTeam? = nil) async throws -> ALTAppID {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.updateAppID(appID, team: team, session: session)
+        return try await portal.updateAppID(appID, team: team, session: session)
     }
 
     @discardableResult
     public func deleteAppID(_ appID: ALTAppID, team: ALTTeam? = nil) async throws -> Bool {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.deleteAppID(appID, for: team, session: session)
+        return try await portal.deleteAppID(appID, for: team, session: session)
     }
 
     @discardableResult
@@ -121,7 +125,7 @@ public class DeveloperPortalProxy {
     public func fetchAppGroups(team: ALTTeam? = nil) async throws -> [ALTAppGroup] {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.fetchAppGroups(for: team, session: session)
+        return try await portal.fetchAppGroups(for: team, session: session)
     }
 
     public func fetchAppGroups(for team: ALTTeam) async throws -> [ALTAppGroup] {
@@ -132,21 +136,21 @@ public class DeveloperPortalProxy {
     public func addAppGroup(name: String, groupIdentifier: String, team: ALTTeam? = nil) async throws -> ALTAppGroup {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.addAppGroup(name: name, groupIdentifier: groupIdentifier, team: team, session: session)
+        return try await portal.addAppGroup(name: name, groupIdentifier: groupIdentifier, team: team, session: session)
     }
 
     @discardableResult
     public func updateAppGroup(_ group: ALTAppGroup, team: ALTTeam? = nil) async throws -> ALTAppGroup {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.updateAppGroup(group, team: team, session: session)
+        return try await portal.updateAppGroup(group, team: team, session: session)
     }
 
     @discardableResult
     public func assignAppID(_ appID: ALTAppID, to groups: [ALTAppGroup], team: ALTTeam? = nil) async throws -> ALTAppID {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.assign(appID, to: groups, team: team, session: session)
+        return try await portal.assign(appID, to: groups, team: team, session: session)
     }
 
     @discardableResult
@@ -158,13 +162,13 @@ public class DeveloperPortalProxy {
     public func deleteAppGroup(_ group: ALTAppGroup, team: ALTTeam? = nil) async throws -> Bool {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.deleteAppGroup(group, team: team, session: session)
+        return try await portal.deleteAppGroup(group, team: team, session: session)
     }
 
     public func fetchProvisioningProfiles(team: ALTTeam? = nil) async throws -> [ALTProvisioningProfile] {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.fetchProvisioningProfiles(for: team, session: session)
+        return try await portal.fetchProvisioningProfiles(for: team, session: session)
     }
 
     public func fetchProvisioningProfiles(for team: ALTTeam) async throws -> [ALTProvisioningProfile] {
@@ -174,7 +178,7 @@ public class DeveloperPortalProxy {
     public func downloadProvisioningProfile(for appID: ALTAppID, deviceType: ALTDeviceType = .iphone, team: ALTTeam? = nil) async throws -> ALTProvisioningProfile {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.downloadProvisioningProfile(for: appID, deviceType: deviceType, team: team, session: session)
+        return try await portal.downloadProvisioningProfile(for: appID, deviceType: deviceType, team: team, session: session)
     }
 
     public func fetchProvisioningProfile(for appID: ALTAppID, deviceType: ALTDeviceType = .iphone, team: ALTTeam? = nil) async throws -> ALTProvisioningProfile {
@@ -185,7 +189,7 @@ public class DeveloperPortalProxy {
     public func deleteProvisioningProfile(_ profile: ALTProvisioningProfile, team: ALTTeam? = nil) async throws -> Bool {
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
-        return try await ALTAppleAPI.shared.deleteProvisioningProfile(profile, team: team, session: session)
+        return try await portal.deleteProvisioningProfile(profile, team: team, session: session)
     }
 }
 
@@ -195,7 +199,7 @@ class DeveloperPortalProxyWithAuth: DeveloperPortalProxy {
     }
 
     func fetchAccount(session: ALTAppleAPISession) async throws -> ALTAccount {
-        try await ALTAppleAPI.shared.fetchAccount(session: session)
+        try await portal.fetchAccount(session: session)
     }
 
     func signIn(appleID: String, 
@@ -208,7 +212,7 @@ class DeveloperPortalProxyWithAuth: DeveloperPortalProxy {
     {
         let authenticationMode = UserDefaults.standard.appleAuthenticationMode
         debugLog("[AppleAuth] Starting sign-in with mode=\(authenticationMode.rawValue)")
-        let authSession = try await DeveloperPortal(authenticationMode: authenticationMode).authenticate(
+        let authSession = try await portal.authenticate(
             appleID: appleID,
             password: password,
             anisetteData: anisetteData,

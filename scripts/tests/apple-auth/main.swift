@@ -128,7 +128,10 @@ struct Rig {
     }
 }
 
-let secrets = ["fixture@example.invalid", "private-password", "private-md", "private-token", "private-query"]
+let secrets = [
+    "fixture@example.invalid", "private-password", "private-md", "private-token", "private-query",
+    "private-dsid", "private-machine", "private-device", "private-api-header"
+]
 
 func expectRedacted(_ text: String) throws {
     for secret in secrets {
@@ -457,6 +460,103 @@ func testNetworkErrorsAreRedacted() async throws {
     try expectRedacted(rig.log.text())
 }
 
+func developerBaseHeaders(contentType: String, accept: String) -> [String: String] {
+    [
+        "Content-Type": contentType, "Accept": accept, "Accept-Language": "en-us",
+        "User-Agent": "original-developer-agent", "X-MMe-Client-Info": "original-developer-client",
+        "X-Xcode-Version": "original-xcode", "X-Apple-App-Info": "original-app-info",
+        "X-Apple-GS-Token": "private-token", "X-Apple-I-Identity-Id": "private-dsid",
+        "X-Apple-I-MD": "private-md", "X-Apple-I-MD-M": "private-machine",
+        "X-Mme-Device-Id": "private-device", "X-Apple-I-MD-RINFO": "17106176",
+        "X-Apple-Locale": "zh_CN", "X-API-Custom": "private-api-header"
+    ]
+}
+
+func testDeveloperIdentityAcrossRequests() async throws {
+    let endpoints: [(String, Bool, String, String)] = [
+        ("https://developerservices2.apple.com/services/QH65B2/viewDeveloper.action", false, "text/x-xml-plist", "text/x-xml-plist"),
+        ("https://developerservices2.apple.com/services/QH65B2/listTeams.action", false, "text/x-xml-plist", "text/x-xml-plist"),
+        ("https://developerservices2.apple.com/services/QH65B2/ios/listAllDevelopmentCerts.action", false, "text/x-xml-plist", "text/x-xml-plist"),
+        ("https://developerservices2.apple.com/services/v1/profiles", true, "application/vnd.api+json", "application/vnd.api+json")
+    ]
+    let identityFields: Set<String> = ["User-Agent", "X-MMe-Client-Info", "X-Xcode-Version", "X-Apple-App-Info"]
+    for mode in [AppleAuthenticationMode.standard, .iloader] {
+        let rig = Rig(mode, replies: Array(repeating: MockReply(), count: endpoints.count + 1))
+        defer { rig.session.invalidateAndCancel() }
+        _ = try await rig.transport.send(authenticationRequest(mode, stage: .initialize), stage: .initialize)
+        for (address, services, contentType, accept) in endpoints {
+            let url = URL(string: address)!
+            let original = developerBaseHeaders(contentType: contentType, accept: accept)
+            let headers = mode.developerHeaders(original)
+            if mode == .standard {
+                try expect(headers == original, "Standard developer headers changed")
+            } else {
+                try expect(Set(headers.keys) == Set(original.keys), "Compatibility policy added or dropped unrelated headers")
+                for (key, value) in original where !identityFields.contains(key) {
+                    try expect(headers[key] == value, "Compatibility policy changed developer API header: \(key)")
+                }
+            }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+            _ = try await rig.transport.send(request, stage: .developerOperation(url, services: services))
+        }
+        let requests = MockURLProtocol.state.recordedRequests()
+        try expect(requests.count == endpoints.count + 1, "Missing authentication or developer request")
+        let authentication = requests[0]
+        for (index, endpoint) in endpoints.enumerated() {
+            let (address, _, contentType, accept) = endpoint
+            let sent = requests[index + 1]
+            try expect(sent.url?.absoluteString == address, "Developer request used the wrong endpoint")
+            let original = developerBaseHeaders(contentType: contentType, accept: accept)
+            for (key, value) in original {
+                let expected = mode == .iloader && identityFields.contains(key)
+                    ? authentication.value(forHTTPHeaderField: key) : value
+                try expect(sent.value(forHTTPHeaderField: key) == expected, "Developer request changed profile or API header: \(key)")
+            }
+            try expect(sent.value(forHTTPHeaderField: "Connection") != "close", "Developer request inherited the SRP complete connection header")
+        }
+        try expectRedacted(rig.log.text())
+    }
+}
+
+func testDeveloperStagesAndTeams1100() async throws {
+    let teamURL = URL(string: "https://developerservices2.apple.com/services/QH65B2/listTeams.action?value=private-query")!
+    let accountURL = URL(string: "https://developerservices2.apple.com/services/QH65B2/viewDeveloper.action?clientId=private-query")!
+    let certificateURL = URL(string: "https://developerservices2.apple.com/services/QH65B2/ios/submitDevelopmentCSR.action")!
+    let profilesURL = URL(string: "https://developerservices2.apple.com/services/v1/profiles")!
+    try expect(AppleAuthenticationStage.developerOperation(teamURL) == .developerTeams, "listTeams stage was not recognized")
+    try expect(AppleAuthenticationStage.developerOperation(accountURL) == .developerAccount, "viewDeveloper stage was not recognized")
+    try expect(AppleAuthenticationStage.developerOperation(certificateURL) == .developerRequest, "Certificate request did not use the general developer stage")
+    try expect(AppleAuthenticationStage.developerOperation(profilesURL, services: true) == .developerServices, "JSON services request did not use the services stage")
+    try expect(AppleAuthenticationStage.developerOperation(accountURL, services: true) == .developerServices, "Explicit services mode did not take precedence")
+
+    let body = try PropertyListSerialization.data(
+        fromPropertyList: ["resultCode": 1100, "resultString": "private-token"], format: .xml, options: 0
+    )
+    for mode in [AppleAuthenticationMode.standard, .iloader] {
+        let rig = Rig(mode, replies: [MockReply(status: 200, data: body)])
+        defer { rig.session.invalidateAndCancel() }
+        var request = URLRequest(url: teamURL)
+        request.httpMethod = "POST"
+        mode.developerHeaders(developerBaseHeaders(contentType: "text/x-xml-plist", accept: "text/x-xml-plist")).forEach {
+            request.setValue($1, forHTTPHeaderField: $0)
+        }
+        let stage = AppleAuthenticationStage.developerOperation(teamURL)
+        let (returned, response) = try await rig.transport.send(request, stage: stage)
+        try expect(returned == body && response.statusCode == 200, "listTeams 1100 response was hidden or converted into a transport error")
+        let parsed = try PropertyListSerialization.propertyList(from: returned, format: nil) as? [String: Any]
+        try expect(parsed?["resultCode"] as? Int == 1100, "Apple resultCode 1100 was lost")
+        try AppleAuthenticationTransport.requireSuccess(response, stage: stage, mode: mode)
+        let requests = MockURLProtocol.state.recordedRequests()
+        try expect(requests.count == 1 && requests[0].value(forHTTPHeaderField: "X-Apple-GS-Token") == "private-token", "listTeams request lost its GS token")
+        let logs = rig.log.text()
+        try expect(logs.contains("stage=listTeams") && logs.contains("status=200"), "listTeams diagnostics lost stage or HTTP status")
+        try expect(!logs.contains("status=503"), "listTeams business error was reported as HTTP 503")
+        try expectRedacted(logs)
+    }
+}
+
 @main
 struct AppleAuthTests {
     static func main() async throws {
@@ -472,7 +572,9 @@ struct AppleAuthTests {
             ("structured Apple errors survive HTTP 429 and 503", testStructuredAppleErrorsArePreserved),
             ("trusted HTTPS redirects preserve only allowed requests", { try testRedirectPolicy() }),
             ("cancellation preservation", testCancellationIsPreserved),
-            ("network error redaction", testNetworkErrorsAreRedacted)
+            ("network error redaction", testNetworkErrorsAreRedacted),
+            ("consistent developer identity with preserved API headers", testDeveloperIdentityAcrossRequests),
+            ("developer stages and listTeams HTTP 200 resultCode 1100", testDeveloperStagesAndTeams1100)
         ]
         for (name, test) in tests {
             try await test()

@@ -14,8 +14,10 @@ handling remains the responsibility of URLSession and the negotiated HTTP
 protocol. Existing SRP proof validation and 2FA challenge handling remain in
 SideSign. This is a comparison of request profiles, not a port of the Rust library.
 
-Only the explicit sign-in flow and its initial account fetch use the selected
-profile. Later developer operations keep SideStore's existing session handling.
+The selected profile applies to sign-in and all subsequent developer operations,
+including team lookup, certificates, devices, and provisioning profiles. These
+requests retain their existing session tokens, Anisette data, and API-specific
+content types while using the same client identity as sign-in.
 An unavailable or invalid service lookup fails visibly in compatibility mode;
 it does not silently switch back to the Standard endpoint.
 
@@ -64,7 +66,8 @@ visible without enabling verbose logging. Keep the build identifier and these
 diagnostics together so results from different installations are distinguishable.
 
 Filter for `[AppleAuth]`. Each request has a flow identifier, mode, and stage
-(`lookup`, `init`, `complete`, `apptokens`, `viewDeveloper`, or a `2fa-*` stage).
+(`lookup`, `init`, `complete`, `apptokens`, `viewDeveloper`, `listTeams`, a
+`developer-*` stage, or a `2fa-*` stage).
 HTTP response lines include status, a classified content type/format, byte count,
 and elapsed milliseconds. A 503 HTML page is reported with its stage instead of
 being treated as a normal plist response. Structured Apple errors retain the

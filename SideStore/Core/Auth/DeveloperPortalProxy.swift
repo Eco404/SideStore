@@ -206,7 +206,9 @@ class DeveloperPortalProxyWithAuth: DeveloperPortalProxy {
                 accountRepairHandler: DeveloperPortal.AccountRepairHandler = DeveloperPortal.defaultAccountRepairHandler,
                 verificationHandler: DeveloperPortal.VerificationHandler?) async throws -> (ALTAccount, ALTAppleAPISession) 
     {
-        let authSession = try await ALTAppleAPI.shared.authenticate(
+        let authenticationMode = UserDefaults.standard.appleAuthenticationMode
+        debugLog("[AppleAuth] Starting sign-in with mode=\(authenticationMode.rawValue)")
+        let authSession = try await DeveloperPortal(authenticationMode: authenticationMode).authenticate(
             appleID: appleID,
             password: password,
             anisetteData: anisetteData,

@@ -8,6 +8,7 @@
 
 import SwiftUI
 import Minimuxer
+import SideSign
 
 private extension Color {
     static let settingsRowBackground = Color.white.opacity(0.15)
@@ -18,6 +19,9 @@ struct UserCustomizationsView: View {
     @State private var selectedBackend: GatewayBackend = selectedGatewayBackendCache
     @State private var useOnDeviceAnisette: Bool = UserDefaults.standard.useOnDeviceAnisette
     @State private var showAnisetteRestartConfirmation: Bool = false
+    @State private var authenticationMode: AppleAuthenticationMode = UserDefaults.standard.appleAuthenticationMode
+    @State private var pendingAuthenticationMode: AppleAuthenticationMode? = nil
+    @State private var showAuthenticationModeConfirmation: Bool = false
     @State private var customizeAppId: Bool = UserDefaults.standard.customizeAppId
     @State private var customizeAppExtensions: Bool = UserDefaults.standard.customizeAppExtensions
     @State private var autoFixAppGroupIDs: Bool = UserDefaults.standard.autoFixAppGroupIDs
@@ -94,6 +98,19 @@ struct UserCustomizationsView: View {
                     }
                     .background(Color.settingsRowBackground)
                     .cornerRadius(14)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("AUTHENTICATION")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(Color.white.opacity(0.6))
+                        .padding(.horizontal, 16)
+
+                    authenticationModePicker
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .background(Color.settingsRowBackground)
+                        .cornerRadius(14)
                 }
 
                 // Section 2: GENERAL
@@ -356,6 +373,21 @@ struct UserCustomizationsView: View {
         } message: {
             Text("Changing Anisette config will invalidate your current provisioned Anisette data and you will be signed out.\n\nThis action will require a restart, do you want to proceed?")
         }
+        .alert("Change Authentication Mode?", isPresented: $showAuthenticationModeConfirmation) {
+            SwiftUI.Button("Change and Sign Out", role: .destructive) {
+                guard let newMode = pendingAuthenticationMode else { return }
+                AuthManager.shared.signOut(keepCertificate: true, keepAnisetteData: true)
+                authenticationMode = newMode
+                UserDefaults.standard.appleAuthenticationMode = newMode
+                pendingAuthenticationMode = nil
+                debugLog("[AppleAuth] Changed authentication mode to \(newMode.rawValue); signed out with certificate and Anisette data preserved")
+            }
+            SwiftUI.Button("Cancel", role: .cancel) {
+                pendingAuthenticationMode = nil
+            }
+        } message: {
+            Text("Changing authentication mode will sign you out of the current Apple ID. Your signing certificate and Anisette data will be kept. The new mode applies the next time you sign in.")
+        }
         .alert("Restart Required", isPresented: $showEMPRestartConfirmation) {
             SwiftUI.Button("Restart Now", role: .destructive) {
                 enableEMPforWireguard = pendingEMPOption
@@ -381,6 +413,48 @@ struct UserCustomizationsView: View {
         } message: {
             Text("Changing the Minimuxer backend requires restarting SideStore. If canceled, changes will not be saved.")
         }
+    }
+
+    private var authenticationModeSelection: Binding<AppleAuthenticationMode> {
+        Binding(
+            get: { authenticationMode },
+            set: { newMode in
+                guard newMode != authenticationMode else { return }
+                pendingAuthenticationMode = newMode
+                showAuthenticationModeConfirmation = true
+            }
+        )
+    }
+
+    private var authenticationModeOptions: some View {
+        Picker("Authentication", selection: authenticationModeSelection) {
+            Text("Standard").tag(AppleAuthenticationMode.standard)
+            Text("iLoader Compatibility").tag(AppleAuthenticationMode.iloader)
+        }
+    }
+
+    private var authenticationModePicker: some View {
+        #if os(tvOS)
+        authenticationModeOptions
+        #else
+        Menu {
+            authenticationModeOptions
+        } label: {
+            HStack {
+                Text(authenticationMode == .iloader ? "iLoader Compatibility" : "Standard")
+                    .font(.system(size: 17, weight: .bold))
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(Color.white.opacity(0.6))
+            }
+            .foregroundColor(.white)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Authentication")
+        .accessibilityValue(authenticationMode == .iloader ? "iLoader Compatibility" : "Standard")
+        #endif
     }
 
     private func toggleRow(title: String, subtitle: String? = nil, isOn: Binding<Bool>) -> some View {

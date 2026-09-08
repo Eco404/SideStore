@@ -8,6 +8,7 @@
 
 import Foundation
 import Minimuxer
+import SideSign
 
 public extension UserDefaults
 {
@@ -189,6 +190,20 @@ public extension UserDefaults
     @objc var useOnDeviceAnisette: Bool {
         get { self.bool(forKey: #function) }
         set { self.set(newValue, forKey: #function) }
+    }
+    @objc var appleAuthenticationModeRawValue: String {
+        get {
+            AppleAuthenticationMode(rawValue: self.string(forKey: #function) ?? "")?.rawValue
+                ?? AppleAuthenticationMode.standard.rawValue
+        }
+        set {
+            self.set(AppleAuthenticationMode(rawValue: newValue)?.rawValue
+                     ?? AppleAuthenticationMode.standard.rawValue, forKey: #function)
+        }
+    }
+    var appleAuthenticationMode: AppleAuthenticationMode {
+        get { AppleAuthenticationMode(rawValue: self.appleAuthenticationModeRawValue) ?? .standard }
+        set { self.appleAuthenticationModeRawValue = newValue.rawValue }
     }
 
     @objc var recreateDatabaseOnNextStart: Bool {

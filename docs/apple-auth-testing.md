@@ -58,6 +58,41 @@ under Anisette Servers. That source change clears provisioned Anisette data;
 changing authentication mode does not. Compare the authentication modes with
 one Anisette source before changing the source for a separate comparison.
 
+## Complete device setup after authorization
+
+Apple authorization and the local device connection are separate stages. A
+successful team and certificate lookup confirms developer access, but device
+registration and refresh still need a reachable device endpoint. An existing
+session or certificate must not bypass required device registration after a
+failed or canceled attempt.
+
+This branch preserves configured tunnel addresses during maintenance and allows
+a reachable manual address when automatic peer discovery fails. Local VPN mode
+still requires a detected utun interface and a reachable device service port.
+IPv4 tunnels are eligible for discovery even when they also carry IPv6.
+
+An earlier develop maintenance pass cleared the saved manual address. This
+build cannot recover a custom address that was already erased. For the reported
+LocalDevVPN configuration whose previous working SideStore endpoint was
+`10.7.0.1`:
+
+1. Keep LocalDevVPN connected.
+2. Open Settings > Connection Config and enable Use Local VPN.
+3. In User Configuration, enter `10.7.0.1` as Device IP. With remote pairing,
+   keep RemotePair Port at its existing `49152` unless the VPN uses another port.
+4. Tap Confirm, verify Active becomes Yes, and retry sign-in or refresh.
+
+The `10.7.0.1` address is specific to that VPN configuration, not a universal
+default. This branch keeps the automatic-discovery default for other setups.
+TCP reachability alone does not confirm a valid pairing or completed refresh.
+If the same failure persists, export the new attempt's log with the build
+version, endpoint selection, port probe, and device registration errors.
+
+CI exercises local endpoint selection, required registration retry/cancellation,
+and authentication protocol behavior, and compiles the complete iOS application.
+It cannot establish that a phone's VPN, pairing, or Apple device registration
+works without an on-device retest.
+
 ## Collect useful diagnostics
 
 Open Settings > View Error Log > Console after the attempt. Authentication mode,

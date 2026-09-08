@@ -2,8 +2,8 @@
 
 [submodule "Dependencies/minimuxer"]
     path = Dependencies/minimuxer
-    url = https://github.com/SideStore/minimuxer
-    branch = develop
+    url = https://github.com/Eco404/minimuxer
+    branch = fix/local-vpn-endpoint
 [submodule "Dependencies/SideSign"]
 	path = Dependencies/SideSign
 	url = https://github.com/Eco404/SideSign

@@ -49,7 +49,8 @@ public final class MaintenanceManager {
                 AnisetteDataManager.shared.clearCache()
                 AuthManager.shared.signOut(keepCertificate: true, keepAnisetteData: false)
             case 3:
-                UserDefaults.standard.tunnelOverridePeerIp = nil
+                // Older LocalDevVPN configurations still require an explicit endpoint.
+                debugLog("[MaintenanceManager] Preserving the configured tunnel endpoint.")
             default:
                 break
             }

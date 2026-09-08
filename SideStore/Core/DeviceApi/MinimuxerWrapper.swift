@@ -286,16 +286,13 @@ func fetchUDID(useStatic: Bool = false) async throws -> String? {
     return "XXXXX-XXXX-XXXXX-XXXX"
     #else
     debugLog("[SideStore] fetchUDID() invoked")
-    let result = try? await withRemotePairingRetry {
-        try await minimuxer.core.fetchUDID()
-    }
-    if let udid = result ?? nil, !udid.isEmpty, udid != "XXXXX-XXXX-XXXXX-XXXX" {
+    if useStatic, let udid = validatedDeviceUDID(PairingFileManager.shared.pairingUDID) {
         return udid
     }
-    if useStatic {
-        return PairingFileManager.shared.pairingUDID
+    let result = try await withRemotePairingRetry {
+        try await minimuxer.core.fetchUDID()
     }
-    return nil
+    return validatedDeviceUDID(result)
     #endif
 }
 

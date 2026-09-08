@@ -58,6 +58,16 @@ jobs:
           set -euo pipefail
           bash scripts/tests/run-auth-tests.sh 2>&1 | tee build/logs/auth-tests.log
 
+      - name: Test Local VPN Endpoint Selection
+        run: |
+          set -euo pipefail
+          bash Dependencies/minimuxer/scripts/test_local_vpn_endpoint.sh 2>&1 | tee build/logs/local-vpn-tests.log
+
+      - name: Test Device Registration Flow
+        run: |
+          set -euo pipefail
+          bash scripts/tests/run-device-registration-tests.sh 2>&1 | tee build/logs/device-registration-tests.log
+
       - name: Resolve Package Dependencies
         run: |
           set -euo pipefail

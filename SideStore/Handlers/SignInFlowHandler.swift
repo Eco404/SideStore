@@ -551,10 +551,26 @@ class SignInFlowHandler: AnyObject, SignInHandler, AnisetteServerHandler {
     
     @MainActor
     func resolveProvisioningError(_ error: Error) async -> ProvisioningErrorDecision {
+        let title: String
+        let message: String
+        switch error as? OperationError {
+        case .invalidPairingFile, .pairingNotComplete:
+            title = "Pairing Error"
+            message = error.localizedDescription
+        case .noConnection, .noVPN, .invalidVPN, .noDevice, .notReachable, .minimuxerNotStarted:
+            title = "Device Connection Error"
+            message = error.localizedDescription
+        case .unknownUDID:
+            title = "Device Connection Error"
+            message = "SideStore could not determine this device's UDID. Check the device connection and pairing status in Settings > Health Check."
+        default:
+            title = "Developer Portal Error"
+            message = error.localizedDescription
+        }
         return await withCheckedContinuation { continuation in
             let alertController = UIAlertController(
-                title: NSLocalizedString("Developer Portal Error", comment: ""),
-                message: error.localizedDescription,
+                title: NSLocalizedString(title, comment: ""),
+                message: message,
                 preferredStyle: .alert
             )
             

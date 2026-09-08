@@ -10,8 +10,10 @@
 import Foundation
 import CoreData
 import SideSign
+import Minimuxer
+import DeviceGatewayAPI
 
-struct SignInResult {
+struct SignInResult: Sendable {
     let team: ALTTeam
     let certificate: ALTCertificate?
     let session: ALTAppleAPISession
@@ -84,6 +86,22 @@ final class SignInOperation: BaseStandaloneOperation<StandaloneOperationContext,
                 }
             }
             
+            // Authentication caches do not prove that this device was registered.
+            try await completeRequiredDeviceRegistration(
+                skip: self.skipDeviceRegistration,
+                isCancelled: { self.isCancelled },
+                register: {
+                    _ = try await self.registerCurrentDevice(for: authResult.team, session: authResult.session)
+                    self.setProgress(75)
+                },
+                shouldRetry: { error in
+                    self.debugLog("[SignInOperation] Device registration failed: \(error)")
+                    switch await self.signInHandler.resolveProvisioningError(error) {
+                    case .retry: return true
+                    case .cancel: return false
+                    }
+                }
+            )
             try await self.finalizeAuthentication(result: .success(authResult))
             self.setProgress(100)
             return authResult
@@ -127,7 +145,6 @@ final class SignInOperation: BaseStandaloneOperation<StandaloneOperationContext,
         var resolvedCertificate: ALTCertificate?
 
         var isCertificateResolved = false
-        var isDeviceRegistered = false
 
         while true {
             if self.isCancelled { throw OperationError.cancelled }
@@ -166,17 +183,6 @@ final class SignInOperation: BaseStandaloneOperation<StandaloneOperationContext,
                 }
 
                 guard isCertificateResolved else { continue }
-
-                // 3. Register Current Device
-                if !isDeviceRegistered {
-                    if !self.skipDeviceRegistration {
-                        self.verboseLog("[SignInOperation] Registering current device...")
-                        let device = try await self.registerCurrentDevice(for: team, session: session)
-                        self.debugLog("[SignInOperation] Registered current device UDID: \(device.identifier).")
-                        reportProgress(stepWeight * 3)
-                    }
-                    isDeviceRegistered = true
-                }
 
                 return SignInResult(
                     team: team,
@@ -587,7 +593,7 @@ private extension SignInOperation {
     @discardableResult
     private func registerCurrentDevice(for team: ALTTeam, session: ALTAppleAPISession) async throws -> ALTDevice {
         self.debugLog("[SignInOperation] registerCurrentDevice starting...")
-        var deviceUDID: String?
+        let deviceUDID: String?
         do {
             await CellularRefreshManager.shared.turnOffDataIfNeeded()
             deviceUDID = try await fetchUDID()
@@ -595,15 +601,25 @@ private extension SignInOperation {
         } catch {
             await CellularRefreshManager.shared.turnOnDataIfNeeded(addOnDelay: 2.0)
             self.debugLog("[SignInOperation] fetchUDID failed: \(error)")
+            if error is CancellationError { throw error }
+            if let operationError = error as? OperationError { throw operationError }
+            if let minimuxerError = error as? MinimuxerError { throw minimuxerError.asOperationError }
+            if let gatewayError = error as? DeviceGatewayError {
+                switch gatewayError.code {
+                case .invalidPairingFile:
+                    throw OperationError.invalidPairingFile(reason: gatewayError.localizedDescription)
+                case .notInitialized:
+                    throw OperationError.minimuxerNotStarted(reason: gatewayError.localizedDescription)
+                default:
+                    throw OperationError.noDevice(reason: gatewayError.localizedDescription)
+                }
+            }
+            throw OperationError.noDevice(reason: error.localizedDescription)
         }
         
-        if deviceUDID == nil || deviceUDID?.isEmpty == true || deviceUDID == "XXXXX-XXXX-XXXXX-XXXX" {
-            deviceUDID = try? await fetchUDID(useStatic: true)
-        }
-        
-        guard let udid = deviceUDID, !udid.isEmpty, udid != "XXXXX-XXXX-XXXXX-XXXX" else {
+        guard let udid = validatedDeviceUDID(deviceUDID) else {
             self.debugLog("[SignInOperation] Failed to fetch device UDID.")
-            throw OperationError.unknownUDID
+            throw OperationError.noDevice(reason: "The device connection did not return a usable UDID.")
         }
         self.debugLog("[SignInOperation] Fetched device UDID: \(udid). Fetching team devices...")
         

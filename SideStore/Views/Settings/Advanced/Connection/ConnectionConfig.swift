@@ -12,8 +12,8 @@ import Combine
 final class ConnectionConfig: ObservableObject {
     static let shared = ConnectionConfig()
 
-    // yeah we dont use default coz we expect auto discovery to find it
-    private static var defaultOverrideIP: String { "" }     
+    // An empty override uses discovery; explicit device addresses remain authoritative.
+    private static var defaultOverrideIP: String { "" }
     private static var defaultRemoteServerIP: String { AppConstants.Connection.defaultRemoteServerIP }
     private static var defaultWireGuardServerHost: String { AppConstants.Proxy.address }
     private static var defaultWireGuardServerPort: UInt16 { AppConstants.Proxy.defaultPort }

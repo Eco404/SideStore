@@ -276,8 +276,8 @@ struct ConnectionConfigView: View {
             return
         }
         config.useLocalVPN = draftUseLocalVPN
-        config.overrideTunnelPeerIp = draftOverrideTunnelPeerIp
-        config.remoteServerIp = draftRemoteServerIp
+        config.overrideTunnelPeerIp = draftOverrideTunnelPeerIp.trimmingCharacters(in: .whitespacesAndNewlines)
+        config.remoteServerIp = draftRemoteServerIp.trimmingCharacters(in: .whitespacesAndNewlines)
         config.wireguardServerHost = draftWireGuardServerHost.trimmingCharacters(in: .whitespaces)
         config.wireguardServerPort = UInt16(draftWireGuardServerPort)!
         if minimuxer.gateway.pairingFileType == .rppairing {
@@ -288,9 +288,11 @@ struct ConnectionConfigView: View {
                 UserDefaults.standard.remotePairingPortOverride = 0
             }
             syncMinimuxerBackendFromUserDefaults()
-            try? await fetchUDID()
         }
         await bindConnectionConfig()
+        if minimuxer.gateway.pairingFileType == .rppairing {
+            try? await fetchUDID()
+        }
         showConfirmDialog = true
     }
     

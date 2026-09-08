@@ -44,8 +44,10 @@ public final class AppBootManager {
         // Validate the pairing by trying to fetch the UDID
         do {
             debugLog("[AppBootManager] startMinimuxer(): Minimuxer fetchUDID() based connection starting...")
-            let deviceUDID = try await fetchUDID()
-            debugLog("[AppBootManager] startMinimuxer(): Minimuxer fetchUDID() based connection test SUCCEEDED. UDID: \(deviceUDID ?? "nil")")
+            guard validatedDeviceUDID(try await fetchUDID()) != nil else {
+                throw OperationError.noDevice(reason: "The device connection did not return a usable UDID.")
+            }
+            debugLog("[AppBootManager] startMinimuxer(): Minimuxer fetchUDID() based connection test SUCCEEDED.")
             self.needsPairingPrompt = false
         } catch {
             if case MinimuxerError.invalidPairing = error {
@@ -53,7 +55,7 @@ public final class AppBootManager {
                 self.needsPairingPrompt = true
                 throw error
             } else {
-                debugLog("[AppBootManager] startMinimuxer(): Minimuxer fetchUDID() based connection test FAILED but PAIRING FILE IS VALID. \(error)")
+                debugLog("[AppBootManager] startMinimuxer(): Device connection test failed; pairing validity could not be confirmed. \(error)")
             }
         }
     }

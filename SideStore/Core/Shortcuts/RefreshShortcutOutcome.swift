@@ -13,6 +13,7 @@ enum RefreshShortcutOutcome {
     /// Always wait for the operation to stop writing before allowing Shortcuts to
     /// restore its network settings. A hard system/process termination cannot be
     /// converted into a result by this in-process helper.
+    @available(iOS 16.0, tvOS 16.0, macOS 13.0, watchOS 9.0, *)
     static func run(
         foregroundAfter: Duration = .seconds(27),
         operation: @escaping @Sendable () async throws -> RefreshShortcutReport,

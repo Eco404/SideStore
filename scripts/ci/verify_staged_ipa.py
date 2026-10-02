@@ -3,6 +3,7 @@
 
 import argparse
 import io
+import json
 from pathlib import Path
 import plistlib
 import subprocess
@@ -64,6 +65,12 @@ def verify_ipa(ipa_path, expected_version):
     with zipfile.ZipFile(ipa_path) as archive:
         check_archive(archive)
         main_bundle = "Payload/SideStore.app"
+        metadata = json.loads(archive.read(f"{main_bundle}/Metadata.appintents/extract.actionsdata"))
+        actions = metadata.get("actions", {})
+        required_actions = {"PrepareRefreshProfilesIntent", "ApplyRefreshProfilesIntent", "RefreshAllAppsIntent"}
+        if not required_actions.issubset(actions):
+            raise ValueError(f"Missing shortcut actions: {required_actions - actions.keys()}")
+        print("Verified shortcut metadata: prepare, apply, and refresh all actions")
         check_bundle(
             archive,
             main_bundle,

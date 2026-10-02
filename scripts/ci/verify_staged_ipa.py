@@ -67,7 +67,8 @@ def verify_ipa(ipa_path, expected_version):
         main_bundle = "Payload/SideStore.app"
         metadata = json.loads(archive.read(f"{main_bundle}/Metadata.appintents/extract.actionsdata"))
         actions = metadata.get("actions", {})
-        required_actions = {"PrepareRefreshProfilesIntent", "ApplyRefreshProfilesIntent", "RefreshAllAppsIntent"}
+        # The migrated RefreshAllAppsIntent retains its legacy metadata identity.
+        required_actions = {"PrepareRefreshProfilesIntent", "ApplyRefreshProfilesIntent", "RefreshAllIntent"}
         if not required_actions.issubset(actions):
             raise ValueError(f"Missing shortcut actions: {required_actions - actions.keys()}")
         print("Verified shortcut metadata: prepare, apply, and refresh all actions")

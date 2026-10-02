@@ -100,7 +100,7 @@ enum RefreshShortcutOutcome {
     /// network settings while the underlying operation is still writing profiles.
     static func awaitCompletion<Value>(
         names: [String: String],
-        start: (_ completion: @escaping @Sendable (Result<[String: Result<Value, Error>], Error>) -> Void) throws -> Void
+        start: @Sendable (_ completion: @escaping @Sendable (Result<[String: Result<Value, Error>], Error>) -> Void) throws -> Void
     ) async -> RefreshShortcutReport {
         await withCheckedContinuation { continuation in
             do {

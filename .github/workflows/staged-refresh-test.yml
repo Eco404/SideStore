@@ -1,0 +1,109 @@
+name: Staged Refresh Test IPA
+
+on:
+  push:
+    branches: [feat/staged-refresh]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staged-refresh-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Prepare Build Metadata
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs
+          python3 -m venv .venv-ci
+          echo "$PWD/.venv-ci/bin" >> "$GITHUB_PATH"
+          BASE_VERSION=$(.venv-ci/bin/python scripts/ci/workflow.py get-marketing-version)
+          STAGED_VERSION="${BASE_VERSION}-staged.${GITHUB_RUN_NUMBER}+${GITHUB_SHA:0:8}"
+          .venv-ci/bin/python scripts/ci/workflow.py set-marketing-version "$STAGED_VERSION"
+          echo "MARKETING_VERSION=$STAGED_VERSION" >> "$GITHUB_ENV"
+          {
+            echo "Version: $STAGED_VERSION"
+            echo "SideStore: $GITHUB_SHA"
+            git submodule status --recursive
+          } | tee build/logs/revisions.log
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1.6.0
+        with:
+          xcode-version: "26.4"
+
+      - name: Install Build Tools
+        run: |
+          set -euo pipefail
+          brew install ldid xcbeautify 2>&1 | tee build/logs/tools.log
+          xcodebuild -version | tee -a build/logs/tools.log
+
+      - name: Test Staged Refresh
+        run: |
+          set -euo pipefail
+          bash scripts/tests/run-staged-refresh-tests.sh 2>&1 | tee build/logs/staged-tests.log
+          bash scripts/tests/run-refresh-result-tests.sh 2>&1 | tee build/logs/refresh-result-tests.log
+
+      - name: Resolve Package Dependencies
+        run: |
+          set -euo pipefail
+          if xcodebuild -resolvePackageDependencies -project AltStore.xcodeproj -scheme SideStore 2>&1 | tee build/logs/resolve.log; then
+            exit 0
+          else
+            RESOLVE_STATUS=$?
+          fi
+          if ! grep -Eq "failed downloading .*required by binary target 'OpenSSL': .*/Library/Caches/org\.swift\.swiftpm/artifacts/[^[:space:]]+ already exists in file system" build/logs/resolve.log; then
+            exit "$RESOLVE_STATUS"
+          fi
+          xcodebuild -resolvePackageDependencies -project AltStore.xcodeproj -scheme SideStore 2>&1 | tee build/logs/resolve-retry.log
+
+      - name: Archive
+        run: |
+          set -euo pipefail
+          NSUnbufferedIO=YES make -B build 2>&1 | tee build/logs/build.log | xcbeautify --renderer github-actions
+
+      - name: Preserve Entitlements
+        run: |
+          set -euo pipefail
+          make fakesign 2>&1 | tee build/logs/fakesign.log
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          make ipa 2>&1 | tee build/logs/package.log
+
+      - name: Verify IPA
+        run: |
+          set -euo pipefail
+          python scripts/ci/verify_staged_ipa.py SideStore.ipa "$MARKETING_VERSION" 2>&1 | tee build/logs/verify.log
+          shasum -a 256 SideStore.ipa | tee -a build/logs/verify.log
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: SideStore-${{ env.MARKETING_VERSION }}
+          path: SideStore.ipa
+          if-no-files-found: error
+
+      - name: Upload Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SideStore-staged-${{ github.run_number }}-logs
+          path: build/logs
+          if-no-files-found: warn

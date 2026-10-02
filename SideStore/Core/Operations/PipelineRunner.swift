@@ -103,6 +103,10 @@ final class PipelineRunner: Sendable
                  handler: PipelineExecutionHandler,
                  group: RefreshGroup) async throws -> RefreshGroup
     {
+        guard RefreshExecutionGate.shared.beginOrdinary() else {
+            throw OperationError.invalidParameters("A staged refresh is running. Try again after it finishes.")
+        }
+        defer { RefreshExecutionGate.shared.endOrdinary() }
         let operations = operations.filter { progress.progress(for: $0) == nil || progress.progress(for: $0)?.isCancelled == true }
         guard !operations.isEmpty else { throw OperationError.cancelled }
         
@@ -385,5 +389,4 @@ extension RefreshGroup {
         return ctx
     }
 }
-
 

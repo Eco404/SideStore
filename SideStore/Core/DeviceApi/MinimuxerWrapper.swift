@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import CryptoKit
 import Network
 import Minimuxer
 import MinimuxerCommon
@@ -255,10 +256,16 @@ func minimuxerStart(_ pairingFile: String, preferred: PairingProtocol? = nil) as
     await bindConnectionConfig()
     await minimuxer.network.start()
     #else
-    await bindConnectionConfig()
-    debugLog("[SideStore] minimuxerStart(pairingFile) invoked")
-    try await withRemotePairingRetry {
-        try await minimuxer.core.start(pairingFile: pairingFile, mountPath: ddiMountPath, preferred: preferred)
+    // A cold App Intent and the app's boot task can initialize the same gateway.
+    // Share identical in-flight starts instead of resetting an active handshake.
+    let digest = SHA256.hash(data: Data(pairingFile.utf8)).map { String(format: "%02x", $0) }.joined()
+    let key = "minimuxer_start_\(digest)_\(String(describing: preferred))"
+    try await TaskChainCoalescer.shared.coalesce(key: key) {
+        await bindConnectionConfig()
+        debugLog("[SideStore] minimuxerStart(pairingFile) invoked")
+        try await withRemotePairingRetry {
+            try await minimuxer.core.start(pairingFile: pairingFile, mountPath: ddiMountPath, preferred: preferred)
+        }
     }
     #endif
 }

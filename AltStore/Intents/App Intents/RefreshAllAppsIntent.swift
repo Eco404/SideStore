@@ -91,10 +91,20 @@ extension RefreshAllAppsIntent
     private actor OperationActor
     {
         private(set) var operation: BackgroundRefreshAppsOperation?
+        private var needsFinishedNotification = false
         
         func set(_ operation: BackgroundRefreshAppsOperation?)
         {
             self.operation = operation
+            if self.needsFinishedNotification {
+                operation?.presentsFinishedNotification = true
+            }
+        }
+
+        func requestFinishedNotification()
+        {
+            self.needsFinishedNotification = true
+            self.operation?.presentsFinishedNotification = true
         }
     }
 }
@@ -105,7 +115,7 @@ struct RefreshAllAppsIntent: AppIntent, CustomIntentMigratedAppIntent, Predictab
     static let intentClassName = "RefreshAllIntent"
     
     static var title: LocalizedStringResource = "Refresh All Apps"
-    static var description = IntentDescription("Refreshes your sideloaded apps to prevent them from expiring.")
+    static var description = IntentDescription("Refreshes your sideloaded apps to prevent them from expiring. Returns success or failure details so your shortcut can continue and restore network settings.")
     
     static var parameterSummary: some ParameterSummary {
         Summary("Refresh All Apps")
@@ -137,99 +147,49 @@ struct RefreshAllAppsIntent: AppIntent, CustomIntentMigratedAppIntent, Predictab
         self.init(presentsNotifications: false)
     }
     
-    func perform() async throws -> some IntentResult & ProvidesDialog
+    func perform() async -> some IntentResult & ReturnsValue<RefreshShortcutResult> & ProvidesDialog
     {
-        do
-        {
-            // Request foreground execution at ~27 seconds to gracefully handle timeout.
-            let deadline: ContinuousClock.Instant = .now + .seconds(27)
-            
-            try await withThrowingTaskGroup(of: Void.self) { taskGroup in
-                taskGroup.addTask {
-                    try await self.refreshAllApps()
-                }
-                
-                taskGroup.addTask {
-                    try await Task.sleep(until: deadline)
-                    throw OperationError.timedOut
-                }
-                
-                do
-                {
-                    for try await _ in taskGroup.prefix(1)
-                    {
-                        // We only care about the first child task to complete.
-                        taskGroup.cancelAll()
-                        break
-                    }
-                }
-                catch OperationError.timedOut
-                {
-                    // We took too long to finish and return the final result,
-                    // so we'll now present a normal notification when finished.
-                    let operation = await self.operationActor.operation
-                    operation?.presentsFinishedNotification = true
-                    
-                    try await self.requestToContinueInForeground()
-                }
-            }
-            
-            return .result(dialog: "All apps have been refreshed.")
-        }
-        catch
-        {
-            let intentError = IntentError(error)
-            throw intentError
-        }
+        let report = await RefreshShortcutOutcome.run(operation: {
+            await self.refreshAllApps()
+        }, requestForeground: {
+            await self.operationActor.requestFinishedNotification()
+            try await self.requestToContinueInForeground()
+        }, foregroundFailure: { error in
+            debugLog("[RefreshAllAppsIntent] Could not continue in foreground: \(error.localizedDescription)")
+        })
+
+        return .result(value: RefreshShortcutResult(report: report), dialog: "\(report.message)")
     }
 }
 
 @available(iOS 17.0, tvOS 17.0, *)
 private extension RefreshAllAppsIntent
 {
-    func refreshAllApps() async throws
+    func refreshAllApps() async -> RefreshShortcutReport
     {
-        try await DatabaseManager.shared.start()
-        
-        let context = DatabaseManager.shared.persistentContainer.newBackgroundContext()
-        let installedApps = await context.perform { InstalledApp.fetchAppsForRefreshingAll(in: context) }
-        
-        try await withCheckedThrowingContinuation { continuation in
-            let operation = try? AppManager.shared.backgroundRefresh(installedApps, presentsNotifications: self.presentsNotifications) { (result) in
-                do
-                {
-                    let results = try result.get()
-                    
-                    for (_, result) in results
-                    {
-                        guard case let .failure(error) = result else { continue }
-                        throw error
-                    }
-                    
-                    continuation.resume()
-                }
-                catch OperationError.noInstalledApps
-                {
-                    continuation.resume()
-                }
-                catch
-                {
-                    continuation.resume(throwing: error)
+        do {
+            try await DatabaseManager.shared.start()
+
+            let context = DatabaseManager.shared.persistentContainer.newBackgroundContext()
+            let installedApps = await context.perform { InstalledApp.fetchAppsForRefreshingAll(in: context) }
+            let names = await context.perform {
+                Dictionary(uniqueKeysWithValues: installedApps.map { ($0.bundleIdentifier, $0.name) })
+            }
+
+            guard !installedApps.isEmpty else {
+                return RefreshShortcutReport(status: "no_apps", message: "There are no apps to refresh.", batchIdentifier: "", items: [])
+            }
+
+            return await RefreshShortcutOutcome.awaitCompletion(names: names) { completion in
+                let operation = try AppManager.shared.backgroundRefresh(installedApps, presentsNotifications: self.presentsNotifications, completionHandler: completion)
+                operation.ignoresServerNotFoundError = false
+                self.progress.addChild(operation.progress, withPendingUnitCount: 1)
+                Task {
+                    await self.operationActor.set(operation)
                 }
             }
-            
-            guard let operation else {
-                debugLog("[RefreshAllAppsIntent] backgroundRefresh instance is nil")
-                return 
-            }
-            
-            operation.ignoresServerNotFoundError = false
-            
-            self.progress.addChild(operation.progress, withPendingUnitCount: 1)
-            
-            Task {
-                await self.operationActor.set(operation)
-            }
+        } catch {
+            return RefreshShortcutOutcome.failure(error)
         }
     }
 }
